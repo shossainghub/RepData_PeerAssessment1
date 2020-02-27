@@ -168,6 +168,7 @@ activityimp_df %>%
     ungroup() %>% 
     ggplot() + 
     geom_line(aes(x = interval, y = steps, linetype = wday), color = "gray50", size = 1) +
+    facet_wrap(wday~., nrow = 2) +
     xlab("Interval")+
     ylab("Average Number of Steps")+
     ggtitle("Average Number of Steps per Interval") +
