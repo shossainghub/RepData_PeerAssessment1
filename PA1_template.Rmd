@@ -1,25 +1,181 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
+author: "Shahadat Hossain"
+date: "Feb 26, 2020"
 output: 
   html_document:
     keep_md: true
 ---
 
+## Introduction
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the “quantified self” movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The data for this assignment can be downloaded from the course web site:
+
+* Dataset: [Activity monitoring data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip) 
+
+The variables included in this dataset are:
+
+- `steps`: Number of steps taking in a 5-minute interval (missing values are coded as `NA`)
+- `date`: The date on which the measurement was taken in YYYY-MM-DD format
+- `interval`: Identifier for the 5-minute interval in which measurement was taken
+ 
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset. 
 
 ## Loading and preprocessing the data
+The *activity.zip* file contains dataset for the assignment. In the following the `.zip` file has been unziped to obtain a csv file.
 
+```{r, message=FALSE}
+library(data.table)
+library(tidyverse)
+library(kableExtra)
+
+# Unzip data
+unzip("activity.zip")
+
+# Reading CSV data
+
+activity_df <- fread("activity.csv")
+
+activity_df <- activity_df %>% 
+    mutate(date = as.Date(date),
+           day = weekdays(date))
+
+```
 
 
 ## What is mean total number of steps taken per day?
 
+In the following, the histogram shows the total number of steps taken each day.
+
+```{r}
+activity_df %>%
+    group_by(date) %>% 
+    summarise(steps = sum(steps)) %>% 
+    ungroup() %>%
+    with(., hist(steps, breaks = 10, xlab="Steps", main = "Total steps per day", col = "gray80"))
+```
+
+From the above graph, majority of the people walk about 10000 to 15000 stpes per day.
+
+```{r}
+desc_stat <- activity_df %>%
+    group_by(date) %>% 
+    summarise(steps = sum(steps)) %>% 
+    ungroup() %>%
+    summarise(`Average total daily steps` = mean(steps, na.rm = TRUE),
+              `Median total daily steps` = median(steps, na.rm = TRUE))
+
+Mean <- as.character(round(desc_stat$`Average total daily steps`,2))
+Median <-  as.character(desc_stat$`Median total daily steps`)
+
+kable(desc_stat) %>%
+    column_spec(column = 1:2, width = "5cm")
+```
+
+The mean and median of total number of steps in each day is `r Mean` and `r Median` respectively.
 
 
 ## What is the average daily activity pattern?
+```{r}
+daily_activity <- activity_df %>% 
+    group_by(interval) %>% 
+    summarise(steps = mean(steps, na.rm = TRUE)) %>%
+    ungroup()
 
+daily_activity %>%
+    ggplot() + 
+    geom_line(aes(x = interval, y = steps), color = "gray50", size = 1) +
+    xlab("Interval")+
+    ylab("Average Number of Steps")+
+    ggtitle("Average Number of Steps per Interval")
+
+```
+
+```{r}
+max_interval <- daily_activity%>% 
+    filter(steps == max(steps, na.rm = TRUE)) %>% 
+    mutate(steps = round(steps, 0))
+
+kable(max_interval) %>%
+    column_spec(column = 1:2, width = "5cm")
+```
+
+
+On average the maximum level of steps is `r max_interval$steps` for the interval `r max_interval$interval`
 
 
 ## Imputing missing values
 
+```{r}
+activityimp_df <- activity_df %>%
+    group_by(interval) %>% 
+    mutate(steps = ifelse(is.na(steps), round(mean(steps, na.rm = TRUE),0), steps)) %>% 
+    ungroup() %>% 
+    rename(steps_imputed = steps)
+
+activity_comp_df <- activity_df %>%
+    rename(step_original = steps) %>%
+    left_join(., activityimp_df, by = c("date", "interval", "day")) %>%
+    gather(variable, val, -c(date, interval, day), na.rm = TRUE) %>%
+    
+    group_by(date, variable) %>%
+    summarise(steps = sum(val, na.rm = TRUE)) %>%
+    ungroup() %>%
+    mutate(variable = recode_factor(variable, 
+                                    `step_original` = "Steps (original)",
+                                    `steps_imputed` = "Steps (imputed)"))
+
+ggplot(activity_comp_df) +
+    geom_histogram(aes(x = steps), fill = "gray80", bins = 10, color = "gray50") + 
+    facet_wrap(.~variable) + 
+    xlab("Steps") +
+    ylab("Frequency") +
+    ggtitle("Total steps per day") + 
+    theme_bw() +
+    theme(legend.position = "top", 
+          legend.title = element_blank())
+
+```
+
+The missiing values have been imputed by the average steps of same interval for all days. We assume that the during the same time interval of each day the number of steps will be similar. After imputation, the frequency of total number of steps within 10000 ot 15000 steps per day has increased. This is also shown in the above histogram of pre and post imputational data.
+
+
+```{r}
+activity_comp_df %>% 
+    group_by(variable) %>% 
+    summarise(Mean = mean(steps, na.rm = TRUE),
+              Median = median(steps, na.rm = TRUE)) %>%
+    ungroup() %>% 
+    rename(Variable = variable) %>%
+    kable() %>%
+    column_spec(column = 1:3, width = "5cm")
+```
+
+Althought the difference between meand steps of original and imuted steps are very small, after imputation the meand and meadian both are higher tann the original meand and median respectively.
+
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r}
+activityimp_df %>%
+    mutate(wday = ifelse(day %in% c("Saturday", "Sunday"), "Weekend", "Weekday")) %>%
+    group_by(interval, wday) %>%
+    summarise(steps = mean(steps_imputed, na.rm = TRUE)) %>%
+    ungroup() %>% 
+    ggplot() + 
+    geom_line(aes(x = interval, y = steps, linetype = wday), color = "gray50", size = 1) +
+    xlab("Interval")+
+    ylab("Average Number of Steps")+
+    ggtitle("Average Number of Steps per Interval") +
+    theme_bw() +
+    theme(legend.position = c(.8,.9), 
+          legend.title = element_blank(),
+          legend.background = element_rect(fill = NA))
+    
+```
+
+In the above graph, on average the step trends are different on the weekend and weekdays. This may be due to people having an increased opportunity for activity beyond normal work hours for those who work during the week.
